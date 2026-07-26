@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1">
+<title>Ledger</title>
+
+<link rel="manifest" href="./manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ledger">
+<meta name="theme-color" content="#08090c">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#08090c;
+  --panel:#0d0f13;
+  --ink:#E7E9ED;
+  --muted:#6E757B;
+  --dim:#464C53;
+  --gold:#BBA37D;
+  --rule:rgba(187,163,125,0.28);
+  --hair:rgba(231,233,237,0.07);
+
+  --col:34rem;
+  --gut:1.4rem;
+}
+html,body{height:100%;overscroll-behavior-y:none}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Jost',system-ui,-apple-system,sans-serif;
+  font-weight:300;
+  -webkit-font-smoothing:antialiased;
+  display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+
+.wrap{
+  width:100%;
+  max-width:var(--col);
+  margin:0 auto;
+  padding-left:var(--gut);
+  padding-right:var(--gut);
+}
+
+/* ---------- masthead ---------- */
+header{flex-shrink:0;padding-top:1.5rem;padding-bottom:0.9rem}
+header .wrap{display:flex;align-items:center;gap:0.85rem}
+header svg.seal{width:26px;height:26px;flex-shrink:0}
+.brand{
+  font-family:'Cormorant Garamond',Georgia,serif;
+  font-weight:500;text-transform:uppercase;
+  letter-spacing:0.28em;font-size:1.02rem;line-height:1;
+  padding-left:0.28em;
+}
+.count{
+  margin-left:auto;
+  font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--dim);font-variant-numeric:tabular-nums;
+  padding-right:0.7rem;
+}
+.menu{
+  background:none;border:none;color:var(--dim);cursor:pointer;
+  padding:0.35rem 0.1rem;display:flex;flex-direction:column;gap:3px;
+  transition:color .3s ease;
+}
+.menu span{display:block;width:3px;height:3px;border-radius:50%;background:currentColor}
+.menu:active,.menu:hover{color:var(--gold)}
+
+/* ---------- tabs ---------- */
+nav{flex-shrink:0;border-bottom:1px solid var(--hair)}
+nav .wrap{display:flex;overflow-x:auto;scrollbar-width:none}
+nav .wrap::-webkit-scrollbar{display:none}
+.tab{
+  background:none;border:none;
+  font-family:'Jost',sans-serif;font-weight:300;
+  color:var(--dim);text-transform:uppercase;letter-spacing:0.2em;
+  font-size:0.64rem;padding:0.9rem 0 0.75rem;margin-right:1.7rem;
+  white-space:nowrap;position:relative;cursor:pointer;
+  transition:color .35s ease;
+}
+.tab:last-child{margin-right:0}
+.tab::after{
+  content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:var(--gold);transform:scaleX(0);transform-origin:left;
+  transition:transform .4s cubic-bezier(.2,.7,.2,1);
+}
+.tab.on{color:var(--ink)}
+.tab.on::after{transform:scaleX(1)}
+.tab:hover{color:var(--muted)}
+.tab.on:hover{color:var(--ink)}
+.tab .n{
+  font-size:0.52rem;color:var(--dim);margin-left:0.5em;
+  letter-spacing:0.1em;font-variant-numeric:tabular-nums;
+}
+.tab.on .n{color:var(--gold)}
+
+/* ---------- list ---------- */
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:9rem}
+main > .wrap{padding-left:0;padding-right:0}
+.item{
+  display:flex;align-items:flex-start;gap:0.95rem;
+  padding:0.95rem var(--gut);
+  border-bottom:1px solid var(--hair);
+  animation:in .45s cubic-bezier(.2,.7,.2,1) both;
+}
+@keyframes in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.box{
+  width:15px;height:15px;margin-top:3px;flex-shrink:0;
+  border:1px solid var(--rule);border-radius:1px;
+  background:none;cursor:pointer;position:relative;
+  transition:border-color .3s ease;
+}
+.box::after{
+  content:'';position:absolute;inset:2px;background:var(--gold);
+  transform:scale(0);transition:transform .28s cubic-bezier(.3,1.4,.5,1);
+}
+.item.done .box{border-color:rgba(187,163,125,0.5)}
+.item.done .box::after{transform:scale(1)}
+.txt{
+  flex:1;font-size:0.94rem;font-weight:300;line-height:1.45;
+  letter-spacing:0.012em;color:var(--ink);word-break:break-word;
+  transition:color .35s ease;
+}
+.item.done .txt{
+  color:var(--dim);text-decoration:line-through;
+  text-decoration-color:var(--rule);text-decoration-thickness:1px;
+}
+.del{
+  background:none;border:none;color:var(--dim);
+  font-size:1.1rem;line-height:1;padding:0.1rem 0.2rem;cursor:pointer;
+  opacity:0;transition:opacity .3s ease,color .3s ease;
+  font-family:'Jost',sans-serif;font-weight:300;
+}
+.item.done .del{opacity:1}
+.del:active,.del:hover{color:var(--gold)}
+
+/* ---------- empty ---------- */
+.empty{padding:4.5rem 2.6rem;text-align:center;animation:in .5s ease both}
+.empty .line{width:38px;height:1px;background:var(--rule);margin:0 auto 1.7rem}
+.empty p{
+  font-family:'Cormorant Garamond',Georgia,serif;
+  font-size:1.12rem;color:var(--muted);letter-spacing:0.04em;line-height:1.6;
+}
+.empty span{
+  display:block;margin-top:0.9rem;font-family:'Jost',sans-serif;
+  font-size:0.6rem;text-transform:uppercase;letter-spacing:0.24em;color:var(--dim);
+}
+
+/* ---------- compose ---------- */
+footer{
+  position:fixed;left:0;right:0;bottom:0;
+  padding-top:0.9rem;padding-bottom:calc(1rem + env(safe-area-inset-bottom));
+  background:linear-gradient(to top,var(--bg) 62%,rgba(8,9,12,0));
+}
+footer .wrap{display:flex;align-items:center;gap:0.9rem}
+.compose{
+  flex:1;display:flex;align-items:center;gap:0.85rem;
+  border-bottom:1px solid var(--rule);padding-bottom:0.55rem;
+  transition:border-color .4s ease;
+}
+.compose:focus-within{border-color:var(--gold)}
+.wedge{width:7px;height:13px;flex-shrink:0;opacity:0.75}
+input[type=text]{
+  flex:1;background:none;border:none;outline:none;
+  font-family:'Jost',sans-serif;font-weight:300;color:var(--ink);
+  font-size:16px;letter-spacing:0.012em;padding:0;
+}
+input[type=text]::placeholder{color:var(--dim);letter-spacing:0.05em;font-size:0.94rem}
+.add{
+  background:none;border:1px solid var(--rule);color:var(--gold);
+  width:34px;height:34px;flex-shrink:0;border-radius:50%;
+  font-size:1.1rem;line-height:1;font-family:'Jost',sans-serif;font-weight:300;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  padding-bottom:2px;opacity:0.4;
+  transition:background .3s ease,border-color .3s ease,opacity .3s ease;
+}
+.add.live{opacity:1;border-color:var(--gold)}
+.add:active,.add:hover{background:rgba(187,163,125,0.14)}
+
+/* ---------- sweep ---------- */
+.sweep{
+  display:block;margin:1.9rem auto 0;background:none;border:none;
+  color:var(--dim);font-family:'Jost',sans-serif;font-weight:300;
+  font-size:0.58rem;text-transform:uppercase;letter-spacing:0.24em;
+  cursor:pointer;padding:0.6rem 1rem;transition:color .35s ease;
+}
+.sweep:active,.sweep:hover{color:var(--gold)}
+
+/* ---------- sheet ---------- */
+.scrim{
+  position:fixed;inset:0;background:rgba(0,0,0,0.62);
+  opacity:0;pointer-events:none;transition:opacity .3s ease;z-index:40;
+}
+.scrim.up{opacity:1;pointer-events:auto}
+.sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:50;
+  background:var(--panel);border-top:1px solid var(--rule);
+  padding-top:1.7rem;padding-bottom:calc(1.6rem + env(safe-area-inset-bottom));
+  transform:translateY(101%);
+  transition:transform .42s cubic-bezier(.2,.7,.2,1);
+}
+.sheet.up{transform:translateY(0)}
+.sheet h2{
+  font-family:'Cormorant Garamond',Georgia,serif;font-weight:500;
+  text-transform:uppercase;letter-spacing:0.26em;font-size:0.8rem;
+  color:var(--muted);padding-left:0.26em;margin-bottom:1.4rem;
+}
+.act{
+  display:block;width:100%;text-align:left;background:none;border:none;
+  border-top:1px solid var(--hair);color:var(--ink);
+  font-family:'Jost',sans-serif;font-weight:300;font-size:0.88rem;
+  letter-spacing:0.06em;padding:1.05rem 0.1rem;cursor:pointer;
+  transition:color .3s ease;
+}
+.act:active,.act:hover{color:var(--gold)}
+.act small{
+  display:block;color:var(--dim);font-size:0.66rem;
+  letter-spacing:0.1em;margin-top:0.3rem;
+}
+.stamp{
+  margin-top:1.5rem;text-align:center;font-size:0.55rem;
+  letter-spacing:0.22em;text-transform:uppercase;color:var(--dim);
+}
+#file{display:none}
+
+/* ================= BREAKPOINTS ================= */
+
+@media (min-width:480px){
+  :root{--gut:1.8rem}
+}
+
+/* Unfolded Fold / small tablet */
+@media (min-width:700px){
+  :root{--col:40rem;--gut:2.2rem}
+  .brand{font-size:1.14rem}
+  .tab{font-size:0.68rem;padding:1.05rem 0 0.9rem;margin-right:2.1rem}
+  .txt{font-size:1rem;line-height:1.5}
+  .item{padding-top:1.05rem;padding-bottom:1.05rem;gap:1.05rem}
+  .box{width:16px;height:16px}
+  main{padding-bottom:10rem}
+  .sheet .wrap{max-width:34rem}
+}
+
+/* Desktop: four columns at once */
+@media (min-width:1000px){
+  :root{--col:76rem;--gut:2.6rem}
+
+  nav{display:none}
+  footer{display:none}
+  main{padding-bottom:0;display:flex}
+  main > .wrap{display:flex;flex-direction:column}
+
+  .board{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    align-items:stretch;
+    border-top:1px solid var(--hair);
+    flex:1;
+    min-height:0;
+  }
+  .col{
+    border-right:1px solid var(--hair);
+    display:flex;flex-direction:column;
+    padding-bottom:1.4rem;
+    min-height:0;
+  }
+  .col .items{overflow-y:auto}
+  .col:last-child{border-right:none}
+
+  .colhead{
+    display:flex;align-items:baseline;gap:0.6rem;
+    padding:1.5rem 1.5rem 1rem;
+    border-bottom:1px solid var(--hair);
+  }
+  .colhead h3{
+    font-family:'Jost',sans-serif;font-weight:300;
+    text-transform:uppercase;letter-spacing:0.2em;
+    font-size:0.66rem;color:var(--ink);
+  }
+  .colhead .n{
+    font-size:0.55rem;color:var(--gold);
+    letter-spacing:0.1em;font-variant-numeric:tabular-nums;
+  }
+
+  .col .items{flex:1}
+  .col .item{padding:0.85rem 1.5rem;gap:0.85rem}
+  .col .txt{font-size:0.88rem}
+  .col .empty{padding:2.6rem 1.5rem}
+  .col .empty p{font-size:0.98rem}
+  .col .empty .line{margin-bottom:1.2rem}
+  .col .sweep{margin-top:1.2rem;font-size:0.54rem}
+
+  .colfoot{padding:0.9rem 1.5rem 0}
+  .colfoot .compose{padding-bottom:0.5rem}
+  .colfoot input[type=text]{font-size:0.88rem}
+  .colfoot input[type=text]::placeholder{font-size:0.84rem}
+}
+
+@media (min-width:1500px){
+  :root{--col:88rem}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <svg class="seal" viewBox="0 0 96 96" fill="none" aria-hidden="true">
+      <circle cx="48" cy="48" r="37" stroke-width="2" stroke="#BBA37D"/>
+      <circle cx="48" cy="48" r="33" stroke-width="1" stroke="#BBA37D" opacity="0.55"/>
+      <path d="M45 30 L51 30 L48 44 Z" fill="#BBA37D" opacity="0.78"/>
+      <path d="M39 43 L45 43 L42 57 Z" fill="#BBA37D" opacity="0.9"/>
+      <path d="M51 43 L57 43 L54 57 Z" fill="#BBA37D" opacity="0.9"/>
+      <path d="M33 56 L39 56 L36 70 Z" fill="#BBA37D"/>
+      <path d="M45 56 L51 56 L48 70 Z" fill="#BBA37D"/>
+      <path d="M57 56 L63 56 L60 70 Z" fill="#BBA37D"/>
+    </svg>
+    <div class="brand">Ledger</div>
+    <div class="count" id="count"></div>
+    <button class="menu" id="menu" aria-label="Open menu"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<nav id="nav"><div class="wrap" id="navwrap"></div></nav>
+
+<main id="scroller"><div class="wrap" id="stage"></div></main>
+
+<footer>
+  <div class="wrap">
+    <div class="compose">
+      <svg class="wedge" viewBox="0 0 6 14" aria-hidden="true"><path d="M0 0 L6 0 L3 14 Z" fill="#BBA37D"/></svg>
+      <input id="entry" type="text" placeholder="Add an item" autocomplete="off" autocapitalize="sentences" enterkeyhint="done">
+    </div>
+    <button class="add" id="add" aria-label="Add item">+</button>
+  </div>
+</footer>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet">
+  <div class="wrap">
+    <h2>Ledger</h2>
+    <button class="act" id="exp">Save a backup<small>Downloads every list as a file</small></button>
+    <button class="act" id="imp">Restore from backup<small>Replaces everything currently stored</small></button>
+    <div class="stamp" id="stamp"></div>
+  </div>
+</div>
+<input type="file" id="file" accept="application/json,.json">
+
+<script>
+const TABS = ['Fundamental','Lumina','BGIP','Personal'];
+const KEY  = 'ledger.v1';
+const WIDE = window.matchMedia('(min-width:1000px)');
+
+let data = load();
+let active = localStorage.getItem(KEY + '.tab') || TABS[0];
+if(!TABS.includes(active)) active = TABS[0];
+
+function load(){
+  const out = {};
+  TABS.forEach(t => out[t] = []);
+  try{
+    const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
+    TABS.forEach(t => { if(Array.isArray(raw[t])) out[t] = raw[t]; });
+  }catch(e){}
+  return out;
+}
+function save(){
+  try{
+    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(KEY + '.tab', active);
+  }catch(e){}
+}
+
+const navwrap  = document.getElementById('navwrap');
+const stage    = document.getElementById('stage');
+const scroller = document.getElementById('scroller');
+const entry    = document.getElementById('entry');
+const addBtn   = document.getElementById('add');
+const count    = document.getElementById('count');
+const sheet    = document.getElementById('sheet');
+const scrim    = document.getElementById('scrim');
+const stamp    = document.getElementById('stamp');
+const file     = document.getElementById('file');
+
+function openCount(tab){ return data[tab].filter(i => !i.done).length; }
+
+function itemRow(tab, item){
+  const row = document.createElement('div');
+  row.className = 'item' + (item.done ? ' done' : '');
+
+  const box = document.createElement('button');
+  box.className = 'box';
+  box.setAttribute('aria-label', item.done ? 'Mark not done' : 'Mark done');
+  box.onclick = () => { item.done = !item.done; save(); render(); };
+
+  const txt = document.createElement('div');
+  txt.className = 'txt';
+  txt.textContent = item.t;
+
+  const del = document.createElement('button');
+  del.className = 'del';
+  del.textContent = '\u00d7';
+  del.setAttribute('aria-label','Remove item');
+  del.onclick = () => { data[tab] = data[tab].filter(x => x !== item); save(); render(); };
+
+  row.append(box, txt, del);
+  return row;
+}
+
+function emptyBlock(tab){
+  const d = document.createElement('div');
+  d.className = 'empty';
+  d.innerHTML = '<div class="line"></div><p>Nothing on the ' + tab +
+                ' list.</p><span>Add the first item below</span>';
+  return d;
+}
+
+function sweepBtn(tab){
+  const s = document.createElement('button');
+  s.className = 'sweep';
+  s.textContent = 'Clear completed';
+  s.onclick = () => { data[tab] = data[tab].filter(i => !i.done); save(); render(); };
+  return s;
+}
+
+function listInto(host, tab){
+  const items = data[tab];
+  if(!items.length){ host.appendChild(emptyBlock(tab)); return; }
+  [...items]
+    .sort((a,b) => (a.done === b.done) ? 0 : (a.done ? 1 : -1))
+    .forEach(item => host.appendChild(itemRow(tab, item)));
+  if(items.some(i => i.done)) host.appendChild(sweepBtn(tab));
+}
+
+function addTo(tab, value){
+  const v = value.trim();
+  if(!v) return false;
+  data[tab].unshift({t: v, done: false});
+  save();
+  return true;
+}
+
+/* ---------- narrow: tabbed ---------- */
+
+function renderTabs(){
+  navwrap.innerHTML = '';
+  TABS.forEach(t => {
+    const open = openCount(t);
+    const b = document.createElement('button');
+    b.className = 'tab' + (t === active ? ' on' : '');
+    b.innerHTML = t + (open ? ' <span class="n">' + open + '</span>' : '');
+    b.onclick = () => { active = t; save(); render(); };
+    navwrap.appendChild(b);
+  });
+}
+
+function renderNarrow(){
+  renderTabs();
+  const open = openCount(active);
+  count.textContent = open ? open + ' open' : '';
+  stage.innerHTML = '';
+  listInto(stage, active);
+}
+
+/* ---------- wide: four columns ---------- */
+
+function renderWide(){
+  const total = TABS.reduce((n,t) => n + openCount(t), 0);
+  count.textContent = total ? total + ' open' : '';
+
+  stage.innerHTML = '';
+  const board = document.createElement('div');
+  board.className = 'board';
+
+  TABS.forEach(tab => {
+    const col = document.createElement('div');
+    col.className = 'col';
+
+    const head = document.createElement('div');
+    head.className = 'colhead';
+    const h = document.createElement('h3');
+    h.textContent = tab;
+    head.appendChild(h);
+    const open = openCount(tab);
+    if(open){
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = open;
+      head.appendChild(n);
+    }
+
+    const items = document.createElement('div');
+    items.className = 'items';
+    listInto(items, tab);
+
+    const foot = document.createElement('div');
+    foot.className = 'colfoot';
+    const comp = document.createElement('div');
+    comp.className = 'compose';
+    comp.innerHTML = '<svg class="wedge" viewBox="0 0 6 14" aria-hidden="true">' +
+                     '<path d="M0 0 L6 0 L3 14 Z" fill="#BBA37D"/></svg>';
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = 'Add an item';
+    inp.autocomplete = 'off';
+    inp.addEventListener('keydown', e => {
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        if(addTo(tab, inp.value)){ refocus = tab; render(); }
+      }
+    });
+    comp.appendChild(inp);
+    foot.appendChild(comp);
+
+    col.append(head, items, foot);
+    board.appendChild(col);
+  });
+
+  stage.appendChild(board);
+}
+
+let refocus = null;
+
+function render(){
+  if(WIDE.matches) renderWide(); else renderNarrow();
+
+  if(refocus && WIDE.matches){
+    const i = TABS.indexOf(refocus);
+    const inp = stage.querySelectorAll('.colfoot input')[i];
+    if(inp) inp.focus();
+  }
+  refocus = null;
+}
+
+/* ---------- narrow compose ---------- */
+
+function add(){
+  if(addTo(active, entry.value)){
+    entry.value = '';
+    addBtn.classList.remove('live');
+    render();
+    scroller.scrollTop = 0;
+  }
+}
+addBtn.onclick = add;
+entry.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); add(); } });
+entry.addEventListener('input', () => addBtn.classList.toggle('live', entry.value.trim().length > 0));
+
+/* Fold, unfold, rotate: rebuild in the right layout. */
+if(WIDE.addEventListener) WIDE.addEventListener('change', render);
+else WIDE.addListener(render);
+
+/* ---------- sheet ---------- */
+
+function openSheet(){
+  const total = TABS.reduce((n,t) => n + data[t].length, 0);
+  stamp.textContent = total + (total === 1 ? ' item stored' : ' items stored');
+  sheet.classList.add('up'); scrim.classList.add('up');
+}
+function closeSheet(){ sheet.classList.remove('up'); scrim.classList.remove('up'); }
+
+document.getElementById('menu').onclick = openSheet;
+scrim.onclick = closeSheet;
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeSheet(); });
+
+document.getElementById('exp').onclick = () => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const d = new Date();
+  const p = n => String(n).padStart(2,'0');
+  a.href = url;
+  a.download = 'ledger-' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  closeSheet();
+};
+
+document.getElementById('imp').onclick = () => file.click();
+file.onchange = () => {
+  const f = file.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const raw = JSON.parse(r.result);
+      const next = {};
+      TABS.forEach(t => next[t] = Array.isArray(raw[t]) ? raw[t] : []);
+      data = next; save(); render(); closeSheet();
+    }catch(e){
+      stamp.textContent = "That file isn't a Ledger backup";
+    }
+  };
+  r.readAsText(f);
+  file.value = '';
+};
+
+render();
+
+/* ---------- offline + durable storage ---------- */
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persisted()
+    .then(ok => { if(!ok) navigator.storage.persist(); })
+    .catch(() => {});
+}
+</script>
+</body>
+</html>
