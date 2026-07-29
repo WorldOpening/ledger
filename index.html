@@ -249,6 +249,44 @@ input[type=text]::placeholder{color:var(--dim);letter-spacing:0.05em;font-size:0
 }
 #file{display:none}
 
+/* sync status line at top of sheet */
+.synced{
+  font-size:0.6rem;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--dim);padding-bottom:1rem;
+  display:flex;align-items:center;gap:0.55rem;
+}
+.synced .led{
+  width:5px;height:5px;border-radius:50%;background:var(--dim);flex-shrink:0;
+}
+.synced.on .led{background:var(--gold);box-shadow:0 0 6px rgba(187,163,125,0.6)}
+.synced.busy .led{background:var(--gold);animation:pulse 1s ease-in-out infinite}
+.synced.err .led{background:#B4776B}
+@keyframes pulse{0%,100%{opacity:0.3}50%{opacity:1}}
+
+/* sync setup form */
+#syncSheet{z-index:55}
+.syncform{display:flex;flex-direction:column}
+.synclabel{
+  font-family:'Jost',sans-serif;font-weight:400;
+  text-transform:uppercase;letter-spacing:0.2em;font-size:0.58rem;
+  color:var(--dim);margin:1rem 0 0.5rem;
+}
+.syncinput{
+  background:none;border:none;border-bottom:1px solid var(--rule);
+  outline:none;color:var(--ink);
+  font-family:'Jost',sans-serif;font-weight:300;font-size:16px;
+  letter-spacing:0.02em;padding:0.3rem 0 0.55rem;
+  transition:border-color .3s ease;
+}
+.syncinput:focus{border-color:var(--gold)}
+.syncinput::placeholder{color:var(--dim)}
+.syncmsg{
+  min-height:1.1rem;margin:1rem 0 0.2rem;
+  font-size:0.64rem;letter-spacing:0.06em;color:var(--muted);line-height:1.5;
+}
+.syncmsg.err{color:#C08A7E}
+.syncmsg.ok{color:var(--gold)}
+
 /* ---------- detail view ---------- */
 .detail{
   position:fixed;inset:0;z-index:60;
@@ -485,12 +523,37 @@ input[type=text]::placeholder{color:var(--dim);letter-spacing:0.05em;font-size:0
 <div class="sheet" id="sheet">
   <div class="wrap">
     <h2>Ledger</h2>
+
+    <div class="synced" id="syncStatus"></div>
+
+    <button class="act" id="syncNow" style="display:none">Sync now<small id="syncNowSub">Pull, then push</small></button>
+    <button class="act" id="pushBtn" style="display:none">Push this device up<small>Overwrites the cloud copy with what's here</small></button>
+    <button class="act" id="pullBtn" style="display:none">Pull from cloud<small>Replaces everything here with the cloud copy</small></button>
+    <button class="act" id="syncSetup">Set up sync<small id="syncSetupSub">Sync between phone and computer</small></button>
+
     <button class="act" id="exp">Save a backup<small>Downloads every list as a file</small></button>
     <button class="act" id="imp">Restore from backup<small>Replaces everything currently stored</small></button>
     <div class="stamp" id="stamp"></div>
   </div>
 </div>
 <input type="file" id="file" accept="application/json,.json">
+
+<!-- sync setup panel -->
+<div class="sheet" id="syncSheet">
+  <div class="wrap">
+    <h2>Sync setup</h2>
+    <div class="syncform">
+      <label class="synclabel" for="tokenIn">GitHub token</label>
+      <input class="syncinput" id="tokenIn" type="password" placeholder="ghp_..." autocomplete="off" autocapitalize="off" spellcheck="false">
+      <label class="synclabel" for="gistIn">Gist ID</label>
+      <input class="syncinput" id="gistIn" type="text" placeholder="the id from the gist URL" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="syncmsg" id="syncMsg"></div>
+      <button class="act" id="syncSave">Save &amp; connect<small>Checks the token, then links this device</small></button>
+      <button class="act" id="syncForget" style="display:none">Disconnect this device<small>Clears the token and gist here</small></button>
+      <button class="act" id="syncBack"><small>Back</small></button>
+    </div>
+  </div>
+</div>
 
 <!-- detail view -->
 <div class="detail" id="detail">
@@ -841,19 +904,177 @@ function renderDetail(){
 
 document.getElementById('back').onclick = closeDetail;
 
+/* ========== SYNC ENGINE (private GitHub gist) ========== */
+const SYNC = {
+  tokenKey: KEY + '.gh.token',
+  gistKey:  KEY + '.gh.gist',
+  fileName: 'ledger.json',
+  get token(){ return localStorage.getItem(this.tokenKey) || ''; },
+  get gist(){ return localStorage.getItem(this.gistKey) || ''; },
+  get on(){ return !!(this.token && this.gist); },
+  busy: false,
+};
+
+const syncStatusEl = document.getElementById('syncStatus');
+const syncMsgEl    = document.getElementById('syncMsg');
+const syncSheet    = document.getElementById('syncSheet');
+
+function setStatus(state, text){
+  // state: 'off' | 'on' | 'busy' | 'err'
+  syncStatusEl.className = 'synced' + (state === 'off' ? '' : ' ' + state);
+  syncStatusEl.innerHTML = '<span class="led"></span>' + (text || '');
+}
+
+function reflectSyncButtons(){
+  const on = SYNC.on;
+  document.getElementById('syncNow').style.display    = on ? '' : 'none';
+  document.getElementById('pushBtn').style.display    = on ? '' : 'none';
+  document.getElementById('pullBtn').style.display    = on ? '' : 'none';
+  document.getElementById('syncSetupSub').textContent = on
+    ? 'Connected — tap to manage' : 'Sync between phone and computer';
+  document.getElementById('syncForget').style.display = on ? '' : 'none';
+  if(on) setStatus('on', 'Sync connected'); else setStatus('off', 'Not syncing');
+}
+
+async function ghFetch(path, opts){
+  return fetch('https://api.github.com' + path, {
+    ...opts,
+    headers: {
+      'Authorization': 'token ' + SYNC.token,
+      'Accept': 'application/vnd.github+json',
+      ...(opts && opts.headers ? opts.headers : {}),
+    },
+  });
+}
+
+/* pull cloud copy into the app. returns true on success. */
+async function syncPull(){
+  if(!SYNC.on) return false;
+  SYNC.busy = true; setStatus('busy', 'Pulling…');
+  try{
+    const res = await ghFetch('/gists/' + SYNC.gist, { method:'GET', cache:'no-store' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const gist = await res.json();
+    const f = gist.files && gist.files[SYNC.fileName];
+    if(f && f.content){
+      const raw = JSON.parse(f.content);
+      const next = {};
+      TABS.forEach(t => next[t] = Array.isArray(raw[t]) ? raw[t].map(normalize) : []);
+      data = next;
+      localStorage.setItem(KEY, JSON.stringify(data));
+      if(openItem){ openItem = null; closeDetail(); }
+      render();
+    }
+    SYNC.busy = false; setStatus('on', 'Up to date');
+    return true;
+  }catch(e){
+    SYNC.busy = false; setStatus('err', 'Pull failed');
+    return false;
+  }
+}
+
+/* push current app data up to the gist. returns true on success. */
+async function syncPush(){
+  if(!SYNC.on) return false;
+  SYNC.busy = true; setStatus('busy', 'Pushing…');
+  try{
+    const body = { files: { [SYNC.fileName]: { content: JSON.stringify(data, null, 2) } } };
+    const res = await ghFetch('/gists/' + SYNC.gist, { method:'PATCH', body: JSON.stringify(body) });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    SYNC.busy = false; setStatus('on', 'Saved to cloud');
+    return true;
+  }catch(e){
+    SYNC.busy = false; setStatus('err', 'Push failed');
+    return false;
+  }
+}
+
+/* debounced auto-push after edits */
+let pushTimer = null;
+function scheduleSync(){
+  if(!SYNC.on) return;
+  setStatus('busy', 'Saving…');
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => { syncPush(); }, 1400);
+}
+
+/* wrap save() so every change schedules a push */
+const _save = save;
+save = function(){ _save(); scheduleSync(); };
+
 /* ---------- backup sheet ---------- */
 function openSheet(){
   const total = TABS.reduce((n,t) => n + data[t].length, 0);
   stamp.textContent = total + (total === 1 ? ' item stored' : ' items stored');
+  reflectSyncButtons();
   sheet.classList.add('up'); scrim.classList.add('up');
 }
 function closeSheet(){ sheet.classList.remove('up'); scrim.classList.remove('up'); }
+function openSyncSheet(){
+  document.getElementById('tokenIn').value = SYNC.token;
+  document.getElementById('gistIn').value  = SYNC.gist;
+  syncMsgEl.className = 'syncmsg'; syncMsgEl.textContent = '';
+  document.getElementById('syncForget').style.display = SYNC.on ? '' : 'none';
+  syncSheet.classList.add('up'); scrim.classList.add('up');
+}
+function closeSyncSheet(){ syncSheet.classList.remove('up'); }
 
 document.getElementById('menu').onclick = openSheet;
-scrim.onclick = () => { closeSheet(); if(openItem) closeDetail(); };
+scrim.onclick = () => { closeSheet(); closeSyncSheet(); if(openItem) closeDetail(); };
 document.addEventListener('keydown', e => {
-  if(e.key === 'Escape'){ closeSheet(); if(openItem) closeDetail(); }
+  if(e.key === 'Escape'){ closeSheet(); closeSyncSheet(); if(openItem) closeDetail(); }
 });
+
+/* sync buttons */
+document.getElementById('syncSetup').onclick = openSyncSheet;
+document.getElementById('syncBack').onclick  = closeSyncSheet;
+
+document.getElementById('syncNow').onclick = async () => {
+  await syncPull();
+  await syncPush();
+};
+document.getElementById('pushBtn').onclick = async () => { await syncPush(); };
+document.getElementById('pullBtn').onclick = async () => { await syncPull(); };
+
+document.getElementById('syncSave').onclick = async () => {
+  const token = document.getElementById('tokenIn').value.trim();
+  const gist  = document.getElementById('gistIn').value.trim();
+  syncMsgEl.className = 'syncmsg';
+  if(!token || !gist){ syncMsgEl.classList.add('err'); syncMsgEl.textContent = 'Both fields are required.'; return; }
+  syncMsgEl.textContent = 'Checking…';
+  // temporarily store so ghFetch can use them, roll back on failure
+  const prevT = SYNC.token, prevG = SYNC.gist;
+  localStorage.setItem(SYNC.tokenKey, token);
+  localStorage.setItem(SYNC.gistKey, gist);
+  try{
+    const res = await ghFetch('/gists/' + gist, { method:'GET', cache:'no-store' });
+    if(res.status === 401 || res.status === 403){ throw new Error('bad-token'); }
+    if(res.status === 404){ throw new Error('bad-gist'); }
+    if(!res.ok){ throw new Error('http'); }
+    syncMsgEl.classList.add('ok');
+    syncMsgEl.textContent = 'Connected. Use Push on the device that already has your items, Pull on the other.';
+    reflectSyncButtons();
+    document.getElementById('syncForget').style.display = '';
+  }catch(e){
+    localStorage.setItem(SYNC.tokenKey, prevT);
+    localStorage.setItem(SYNC.gistKey, prevG);
+    syncMsgEl.classList.add('err');
+    syncMsgEl.textContent =
+      e.message === 'bad-token' ? 'Token rejected. Check it has the gist scope.' :
+      e.message === 'bad-gist'  ? 'Gist not found. Check the ID.' :
+      'Could not connect. Check your connection and try again.';
+  }
+};
+
+document.getElementById('syncForget').onclick = () => {
+  localStorage.removeItem(SYNC.tokenKey);
+  localStorage.removeItem(SYNC.gistKey);
+  reflectSyncButtons();
+  syncMsgEl.className = 'syncmsg';
+  syncMsgEl.textContent = 'Disconnected on this device.';
+  document.getElementById('tokenIn').value = '';
+  document.getElementById('gistIn').value = '';
+};
 
 document.getElementById('exp').onclick = () => {
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
@@ -887,6 +1108,16 @@ file.onchange = () => {
 };
 
 render();
+reflectSyncButtons();
+
+/* pull once on open so this device starts from the cloud copy */
+if(SYNC.on){
+  syncPull();
+  /* and pull when returning to the app after it was backgrounded */
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible' && !SYNC.busy) syncPull();
+  });
+}
 
 /* ---------- offline + durable storage ---------- */
 if('serviceWorker' in navigator){
