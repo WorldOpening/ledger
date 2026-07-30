@@ -261,6 +261,7 @@ input[type=text]::placeholder{color:var(--dim);letter-spacing:0.05em;font-size:0
 .synced.on .led{background:var(--gold);box-shadow:0 0 6px rgba(187,163,125,0.6)}
 .synced.busy .led{background:var(--gold);animation:pulse 1s ease-in-out infinite}
 .synced.err .led{background:#B4776B}
+.synced.warn .led{background:#C9A96A;box-shadow:0 0 6px rgba(201,169,106,0.7)}
 @keyframes pulse{0%,100%{opacity:0.3}50%{opacity:1}}
 
 /* sync setup form */
@@ -913,14 +914,20 @@ const SYNC = {
   get gist(){ return localStorage.getItem(this.gistKey) || ''; },
   get on(){ return !!(this.token && this.gist); },
   busy: false,
+  /* the revision this device last saw in the cloud */
+  lastRev: null,
 };
 
 const syncStatusEl = document.getElementById('syncStatus');
 const syncMsgEl    = document.getElementById('syncMsg');
 const syncSheet    = document.getElementById('syncSheet');
 
+function newRev(){
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+}
+
 function setStatus(state, text){
-  // state: 'off' | 'on' | 'busy' | 'err'
+  // state: 'off' | 'on' | 'busy' | 'err' | 'warn'
   syncStatusEl.className = 'synced' + (state === 'off' ? '' : ' ' + state);
   syncStatusEl.innerHTML = '<span class="led"></span>' + (text || '');
 }
@@ -947,24 +954,42 @@ async function ghFetch(path, opts){
   });
 }
 
+/* parse a gist file body into {rev, lists}, tolerating the old flat format */
+function parseCloud(text){
+  const raw = JSON.parse(text);
+  if(raw && raw.__ledger && raw.lists){
+    return { rev: raw.rev || null, lists: raw.lists };
+  }
+  // legacy: the file was just the tabs object
+  return { rev: null, lists: raw };
+}
+
+/* read just the current cloud rev without disturbing local data.
+   returns {rev, lists} or null on failure. */
+async function fetchCloud(){
+  const res = await ghFetch('/gists/' + SYNC.gist, { method:'GET', cache:'no-store' });
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const gist = await res.json();
+  const f = gist.files && gist.files[SYNC.fileName];
+  if(!f || !f.content) return { rev: null, lists: null };
+  return parseCloud(f.content);
+}
+
 /* pull cloud copy into the app. returns true on success. */
 async function syncPull(){
   if(!SYNC.on) return false;
   SYNC.busy = true; setStatus('busy', 'Pulling…');
   try{
-    const res = await ghFetch('/gists/' + SYNC.gist, { method:'GET', cache:'no-store' });
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const gist = await res.json();
-    const f = gist.files && gist.files[SYNC.fileName];
-    if(f && f.content){
-      const raw = JSON.parse(f.content);
+    const { rev, lists } = await fetchCloud();
+    if(lists){
       const next = {};
-      TABS.forEach(t => next[t] = Array.isArray(raw[t]) ? raw[t].map(normalize) : []);
+      TABS.forEach(t => next[t] = Array.isArray(lists[t]) ? lists[t].map(normalize) : []);
       data = next;
       localStorage.setItem(KEY, JSON.stringify(data));
       if(openItem){ openItem = null; closeDetail(); }
       render();
     }
+    SYNC.lastRev = rev;
     SYNC.busy = false; setStatus('on', 'Up to date');
     return true;
   }catch(e){
@@ -973,14 +998,29 @@ async function syncPull(){
   }
 }
 
-/* push current app data up to the gist. returns true on success. */
-async function syncPush(){
+/* push current app data up to the gist, stamping a fresh rev.
+   `force` skips the conflict check (used by the explicit Push button). */
+async function syncPush(force){
   if(!SYNC.on) return false;
   SYNC.busy = true; setStatus('busy', 'Pushing…');
   try{
-    const body = { files: { [SYNC.fileName]: { content: JSON.stringify(data, null, 2) } } };
+    // conflict guard: if the cloud moved since we last saw it, don't clobber
+    if(!force){
+      const cloud = await fetchCloud();
+      if(cloud.rev && SYNC.lastRev && cloud.rev !== SYNC.lastRev){
+        SYNC.busy = false;
+        setStatus('warn', 'Cloud changed — open menu');
+        conflictPending = true;
+        return false;
+      }
+    }
+    const rev = newRev();
+    const payload = { __ledger: 1, rev, lists: data };
+    const body = { files: { [SYNC.fileName]: { content: JSON.stringify(payload, null, 2) } } };
     const res = await ghFetch('/gists/' + SYNC.gist, { method:'PATCH', body: JSON.stringify(body) });
     if(!res.ok) throw new Error('HTTP ' + res.status);
+    SYNC.lastRev = rev;
+    conflictPending = false;
     SYNC.busy = false; setStatus('on', 'Saved to cloud');
     return true;
   }catch(e){
@@ -989,13 +1029,20 @@ async function syncPush(){
   }
 }
 
+let conflictPending = false;
+let dirty = false;  // true when this device has an edit not yet pushed
+
 /* debounced auto-push after edits */
 let pushTimer = null;
 function scheduleSync(){
   if(!SYNC.on) return;
+  dirty = true;
   setStatus('busy', 'Saving…');
   clearTimeout(pushTimer);
-  pushTimer = setTimeout(() => { syncPush(); }, 1400);
+  pushTimer = setTimeout(async () => {
+    const ok = await syncPush(false);
+    if(ok) dirty = false;
+  }, 1400);
 }
 
 /* wrap save() so every change schedules a push */
@@ -1007,6 +1054,13 @@ function openSheet(){
   const total = TABS.reduce((n,t) => n + data[t].length, 0);
   stamp.textContent = total + (total === 1 ? ' item stored' : ' items stored');
   reflectSyncButtons();
+  if(SYNC.on && conflictPending){
+    setStatus('warn', 'Cloud changed elsewhere');
+    document.getElementById('syncNowSub').textContent =
+      'This device and the cloud both changed. Pull to take the cloud copy, or Push to keep this device.';
+  }else{
+    document.getElementById('syncNowSub').textContent = 'Pull, then push';
+  }
   sheet.classList.add('up'); scrim.classList.add('up');
 }
 function closeSheet(){ sheet.classList.remove('up'); scrim.classList.remove('up'); }
@@ -1030,11 +1084,19 @@ document.getElementById('syncSetup').onclick = openSyncSheet;
 document.getElementById('syncBack').onclick  = closeSyncSheet;
 
 document.getElementById('syncNow').onclick = async () => {
-  await syncPull();
-  await syncPush();
+  // pull then push is always safe: we adopt cloud first, so no clobber
+  const ok = await syncPull();
+  if(ok) await syncPush(false);
 };
-document.getElementById('pushBtn').onclick = async () => { await syncPush(); };
-document.getElementById('pullBtn').onclick = async () => { await syncPull(); };
+document.getElementById('pushBtn').onclick = async () => {
+  // explicit push is a deliberate "this device wins" — force past the guard
+  const ok = await syncPush(true);
+  if(ok){ conflictPending = false; dirty = false; }
+};
+document.getElementById('pullBtn').onclick = async () => {
+  const ok = await syncPull();
+  if(ok){ conflictPending = false; dirty = false; }
+};
 
 document.getElementById('syncSave').onclick = async () => {
   const token = document.getElementById('tokenIn').value.trim();
@@ -1051,6 +1113,8 @@ document.getElementById('syncSave').onclick = async () => {
     if(res.status === 401 || res.status === 403){ throw new Error('bad-token'); }
     if(res.status === 404){ throw new Error('bad-gist'); }
     if(!res.ok){ throw new Error('http'); }
+    // adopt the current cloud rev as our baseline so the guard has a reference
+    try{ const c = await fetchCloud(); SYNC.lastRev = c.rev; }catch(e){}
     syncMsgEl.classList.add('ok');
     syncMsgEl.textContent = 'Connected. Use Push on the device that already has your items, Pull on the other.';
     reflectSyncButtons();
@@ -1113,9 +1177,17 @@ reflectSyncButtons();
 /* pull once on open so this device starts from the cloud copy */
 if(SYNC.on){
   syncPull();
-  /* and pull when returning to the app after it was backgrounded */
+  /* when returning to the app after it was backgrounded:
+     - if we have an unpushed edit, push it (conflict-guarded) instead of
+       pulling, so we never silently discard local work
+     - otherwise pull, so a device left open refreshes before you touch it */
   document.addEventListener('visibilitychange', () => {
-    if(document.visibilityState === 'visible' && !SYNC.busy) syncPull();
+    if(document.visibilityState !== 'visible' || SYNC.busy) return;
+    if(dirty){
+      syncPush(false).then(ok => { if(ok) dirty = false; });
+    }else{
+      syncPull();
+    }
   });
 }
 
